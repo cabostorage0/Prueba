@@ -18,7 +18,6 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     env:
-      # Para habilitar el "if:" sin usar secrets directamente
       JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
 
     steps:
@@ -29,6 +28,18 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ env.PROJECT_NAME }}-gha-oidc
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform init
+        working-directory: terraform
+        run: terraform init
+
+      # ✅ CREA SOLO EL REPO ECR ANTES DEL PUSH
+      - name: Terraform apply (ECR only)
+        working-directory: terraform
+        run: terraform apply -auto-approve -target=aws_ecr_repository.app
 
       - name: Login to ECR
         id: login
@@ -43,14 +54,8 @@ jobs:
           docker build -t "$ECR:$TAG" app
           docker push "$ECR:$TAG"
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Terraform init
-        working-directory: terraform
-        run: terraform init
-
-      - name: Terraform apply
+      # ✅ AHORA SÍ: APPLY COMPLETO con la imagen TAG de este commit
+      - name: Terraform apply (full)
         id: tf
         working-directory: terraform
         env:
@@ -77,8 +82,9 @@ jobs:
             --output text
 
       - name: Print App URL
+        working-directory: terraform
         run: |
-          DNS=$(jq -r '.public_dns.value' terraform/out.json)
+          DNS=$(jq -r '.public_dns.value' out.json)
           echo "App URL: http://$DNS/"
 
       - name: Create Jira issue (optional)
