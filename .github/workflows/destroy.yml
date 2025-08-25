@@ -1,5 +1,7 @@
 name: destroy
-on: { workflow_dispatch: {} }
+
+on:
+  workflow_dispatch:
 
 permissions:
   id-token: write
@@ -14,16 +16,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Configure AWS via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ env.PROJECT_NAME }}-gha-oidc
           aws-region: ${{ env.AWS_REGION }}
+
       - uses: hashicorp/setup-terraform@v3
-      - name: terraform init
+
+      - name: Terraform init
         working-directory: terraform
         run: terraform init
-      - name: terraform destroy
+
+      - name: Terraform destroy
         working-directory: terraform
         env:
           TF_VAR_project_name: ${{ env.PROJECT_NAME }}
