@@ -17,6 +17,9 @@ env:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    env:
+      # Para habilitar el "if:" sin usar secrets directamente
+      JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
@@ -79,11 +82,12 @@ jobs:
           echo "App URL: http://$DNS/"
 
       - name: Create Jira issue (optional)
-        if: ${{ secrets.JIRA_API_TOKEN != '' }}
+        if: ${{ env.JIRA_API_TOKEN != '' }}
         env:
           JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
           JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
           JIRA_EMAIL: ${{ vars.JIRA_EMAIL }}
-          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_API_TOKEN: ${{ env.JIRA_API_TOKEN }}
         run: |
-          bash scripts/jira_create_issue.sh "Deploy ${{ github.sha }} OK" "EC2 URL: $(jq -r '.public_dns.value' terraform/out.json)"
+          bash scripts/jira_create_issue.sh "Deploy ${{ github.sha }} OK" \
+            "EC2 URL: $(jq -r '.public_dns.value' terraform/out.json)"
