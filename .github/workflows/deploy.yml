@@ -23,6 +23,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 👇 ESTE ES EL STEP NUEVO
+      - name: Skip bootstrap resources (OIDC/role/policy)
+        run: rm -f terraform/oidc.tf
+
       - name: Configure AWS via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
