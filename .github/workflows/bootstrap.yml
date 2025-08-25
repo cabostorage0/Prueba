@@ -1,0 +1,26 @@
+name: bootstrap-oidc
+on: { workflow_dispatch: {} }
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: Configure AWS (one-time with keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+      - name: terraform init
+        working-directory: terraform
+        run: terraform init
+      - name: apply OIDC role only
+        working-directory: terraform
+        run: |
+          terraform apply -auto-approve \
+            -target=aws_iam_openid_connect_provider.github \
+            -target=aws_iam_role.gha_role \
+            -target=aws_iam_role_policy_attachment.gha_attach \
+            -var="github_repo=${{ github.repository }}"
