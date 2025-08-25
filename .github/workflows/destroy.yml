@@ -1,0 +1,31 @@
+name: destroy
+on: { workflow_dispatch: {} }
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  PROJECT_NAME: devops-lab-free
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ env.PROJECT_NAME }}-gha-oidc
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+      - name: terraform init
+        working-directory: terraform
+        run: terraform init
+      - name: terraform destroy
+        working-directory: terraform
+        env:
+          TF_VAR_project_name: ${{ env.PROJECT_NAME }}
+          TF_VAR_aws_region: ${{ env.AWS_REGION }}
+        run: terraform destroy -auto-approve
