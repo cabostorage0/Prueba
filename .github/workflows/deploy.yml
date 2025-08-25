@@ -1,0 +1,82 @@
+name: deploy
+on:
+  push: { branches: ["main"] }
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  PROJECT_NAME: devops-lab-free
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/${{ env.PROJECT_NAME }}-gha-oidc
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & Push Docker
+        id: docker
+        run: |
+          ECR=${{ steps.login.outputs.registry }}/${{ env.PROJECT_NAME }}-repo
+          TAG=${{ github.sha }}
+          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+          docker build -t $ECR:$TAG app
+          docker push $ECR:$TAG
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: terraform init
+        working-directory: terraform
+        run: terraform init
+
+      - name: terraform apply
+        id: tf
+        working-directory: terraform
+        env:
+          TF_VAR_image_tag: ${{ steps.docker.outputs.TAG }}
+          TF_VAR_project_name: ${{ env.PROJECT_NAME }}
+          TF_VAR_aws_region: ${{ env.AWS_REGION }}
+        run: |
+          terraform apply -auto-approve
+          terraform output -json > out.json
+          cat out.json
+
+      - name: Refresh container on EC2 via SSM
+        run: |
+          INSTANCE_ID=$(jq -r '.instance_id.value' terraform/out.json)
+          ECR_REPO=$(jq -r '.ecr_repo_url.value' terraform/out.json)
+          TAG=${{ steps.docker.outputs.TAG }}
+          aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters commands="sudo docker login -u AWS -p $(aws ecr get-login-password --region ${{ env.AWS_REGION }}) ${ECR_REPO%/*}; sudo docker pull ${ECR_REPO}:$TAG; sudo docker rm -f app || true; sudo docker run -d --name app --restart unless-stopped -p 80:80 -e APP_VERSION=$TAG ${ECR_REPO}:$TAG" \
+            --comment "Refresh container after deploy" \
+            --output text
+
+      - name: Print App URL
+        run: |
+          DNS=$(jq -r '.public_dns.value' terraform/out.json)
+          echo "App URL: http://$DNS/"
+
+      - name: (Optional) Create Jira issue
+        if: ${{ secrets.JIRA_API_TOKEN != '' }}
+        env:
+          JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
+          JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+          JIRA_EMAIL: ${{ vars.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+        run: bash scripts/jira_create_issue.sh "Deploy ${{ github.sha }} ✅" "EC2: $(jq -r '.public_dns.value' terraform/out.json)"
