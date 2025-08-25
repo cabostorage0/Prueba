@@ -57,6 +57,7 @@ jobs:
         run: |
           terraform apply -auto-approve
           terraform output -json > out.json
+          cat out.json
 
       - name: Refresh container on EC2 via SSM
         env:
